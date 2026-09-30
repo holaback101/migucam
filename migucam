@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>MiguCam - CCTV Monitor</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    body { background-color: #121212; color: #ffffff; display: flex; flex-direction: column; min-height: 100vh; justify-content: center; align-items: center; }
+    .card { background: #1e1e1e; border-radius: 16px; padding: 24px; width: 90%; max-width: 420px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); text-align: center; }
+    h1 { color: #4caf50; font-size: 24px; margin-bottom: 8px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+    p { color: #aaa; font-size: 14px; margin-bottom: 20px; }
+    .btn { background: #2196f3; color: white; border: none; padding: 14px 20px; width: 100%; border-radius: 12px; font-weight: bold; font-size: 16px; cursor: pointer; margin-bottom: 12px; transition: 0.2s; }
+    .btn:active { transform: scale(0.98); }
+    .btn-green { background: #4caf50; }
+    .btn-dark { background: #333; color: #fff; }
+    .btn-danger { background: #f44336; }
+    input { width: 100%; padding: 14px; background: #2a2a2a; border: 1px solid #444; color: white; border-radius: 12px; margin-bottom: 16px; text-align: center; font-size: 18px; letter-spacing: 2px; }
+    video { width: 100%; height: auto; border-radius: 12px; background: #000; max-height: 60vh; object-fit: cover; }
+    .video-container { position: relative; width: 100%; display: none; }
+    .black-screen { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #000; z-index: 9999; justify-content: center; align-items: center; color: #222; }
+    .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+    .status-badge { display: inline-block; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; background: #333; color: #ffc107; margin-bottom: 12px; }
+  </style>
+</head>
+<body>
+
+  <!-- Card Pemilihan Mode -->
+  <div class="card" id="modeCard">
+    <h1>🐾 MiguCam</h1>
+    <p>Pantau Migu dengan Aman dari Jauh</p>
+    
+    <input type="text" id="roomIdInput" placeholder="Masukkan ID Kode CCTV" value="MIGU123">
+    
+    <button class="btn btn-green" onclick="startSession('camera')">📷 Jadikan HP Ini KAMERA</button>
+    <button class="btn" onclick="startSession('viewer')">📱 Jadikan HP Ini PEMANTAU</button>
+  </div>
+
+  <!-- Container Streaming Video -->
+  <div class="card video-container" id="videoCard">
+    <div id="statusBadge" class="status-badge">Connecting Peer...</div>
+    <video id="remoteVideo" autoplay playsinline muted></video>
+    
+    <div class="controls" id="cameraControls" style="display:none;">
+      <button class="btn btn-dark" onclick="toggleBlackScreen()">🌙 Dim Screen (Hemat Baterai)</button>
+      <button class="btn btn-dark" onclick="toggleTorch()">💡 Torch Light</button>
+    </div>
+    
+    <div class="controls" id="viewerControls" style="display:none;">
+      <button class="btn btn-dark" onclick="callMigu()">🔔 Panggil Migu!</button>
+      <button class="btn btn-danger" onclick="location.reload()">🛑 Stop Stream</button>
+    </div>
+  </div>
+
+  <!-- Black Screen Overlay untuk HP Kamera -->
+  <div class="black-screen" id="blackOverlay" onclick="toggleBlackScreen()">
+    <p>Layar Redup (Ketuk untuk Mengaktifkan Kembali)</p>
+  </div>
+
+  <script>
+    let peerConnection;
+    let localStream;
+    let roomID;
+    let isCamera = false;
+    
+    // Server STUN Gratis untuk Membantu Penghematan & Penetrasi NAT Network
+    const config = {
+      iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+    };
+
+    function startSession(role) {
+      roomID = document.getElementById('roomIdInput').value.trim();
+      if (!roomID) return alert("Harap masukkan Room ID terlebih dahulu!");
+
+      document.getElementById('modeCard').style.display = 'none';
+      document.getElementById('videoCard').style.display = 'block';
+
+      if (role === 'camera') {
+        isCamera = true;
+        document.getElementById('cameraControls').style.display = 'grid';
+        initCamera();
+      } else {
+        document.getElementById('viewerControls').style.display = 'grid';
+        initViewer();
+      }
+    }
+
+    async function initCamera() {
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: true });
+        document.getElementById('remoteVideo').srcObject = localStream;
+        document.getElementById('statusBadge').innerText = "Kamera Ready - Menunggu Pemantau...";
+        document.getElementById('statusBadge').style.color = "#4caf50";
+      } catch (err) {
+        alert("Gagal mengakses kamera/mikrofon: " + err.message);
+      }
+    }
+
+    function initViewer() {
+      document.getElementById('remoteVideo').muted = false;
+      document.getElementById('statusBadge').innerText = "Live Streaming Migu...";
+      document.getElementById('statusBadge').style.color = "#4caf50";
+    }
+
+    function toggleBlackScreen() {
+      const overlay = document.getElementById('blackOverlay');
+      overlay.style.display = (overlay.style.display === 'flex') ? 'none' : 'flex';
+    }
+
+    function toggleTorch() {
+      if (localStream) {
+        const track = localStream.getVideoTracks()[0];
+        const capabilities = track.getCapabilities();
+        if (capabilities.torch) {
+          const settings = track.getSettings();
+          track.applyConstraints({ advanced: [{ torch: !settings.torch }] });
+        } else {
+          alert("Kamera HP ini tidak mendukung fitur Flashlight/Torch via Web API.");
+        }
+      }
+    }
+
+    function callMigu() {
+      // Menghasilkan bunyi Bip panggil ringan untuk Migu
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, ctx.currentTime); // Pitch suara tinggi
+      osc.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.5);
+    }
+  </script>
+</body>
+</html>
